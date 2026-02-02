@@ -27,35 +27,56 @@ uv run python scripts/benchmark.py --vault /path/to/vault --sample 50
 
 ## Architecture
 
-The system uses a **background worker process** to handle all DuckDB operations (DuckDB lacks async/concurrency support).
+The system uses a **background worker process** to handle database operations and file watching.
 
 ```
 MCP Server (mcp_server.py)
-    │ stdio communication with MCP clients
-    ▼
+    | stdio communication with MCP clients
+    v
 BaseController (background_worker.py)
-    │ async request/response via queues + correlation IDs
-    ▼
+    | async request/response via queues + correlation IDs
+    v
 Worker Process (index/worker.py)
-    ├── Indexer: encodes documents → embeddings
-    ├── Searcher: queries embeddings
-    ├── Database: DuckDB vector storage
-    └── DirectoryWatcher: monitors .md file changes
+    |-- Coordinator: PRIMARY/READER role management
+    |-- Indexer: encodes documents -> embeddings
+    |-- Searcher: queries embeddings
+    |-- Database: SQLite + sqlite-vec vector storage
+    +-- DirectoryWatcher: monitors .md file changes
 ```
 
 **Key flow:**
-1. File watcher detects markdown changes → enqueues `IndexMessage`
-2. Indexer batches files, generates embeddings via Sentence Transformers
-3. Embeddings stored in DuckDB with vault name, path, modification time
-4. Search queries encoded with same model, DuckDB performs vector similarity
+1. File watcher detects markdown changes -> enqueues `IndexMessage`
+2. Coordinator checks if this instance should index (PRIMARY role)
+3. Indexer batches files, generates embeddings via Sentence Transformers
+4. Embeddings stored in SQLite with vault name, path, modification time
+5. Search queries encoded with same model, sqlite-vec performs vector similarity
+
+## Multi-Instance Coordination
+
+Multiple instances can share the same database safely:
+
+- **SQLite + WAL mode:** Allows concurrent reads from multiple processes
+- **PRIMARY/READER roles:** Only one instance (PRIMARY) indexes at a time
+- **Automatic failover:** If PRIMARY becomes unresponsive (no heartbeat for 15s), a READER can claim the role
+
+### Coordination Behavior
+
+| Role | Indexing | File Watching | Search |
+|------|----------|---------------|--------|
+| `auto` (default) | PRIMARY only | All instances | All instances |
+| `primary` | Always | Yes | Yes |
+| `reader` | Never | Yes (ignored) | Yes |
+
+Use `--role primary` for single-instance deployments to skip coordination overhead.
+Use `--role reader` for read-only instances that should never index.
 
 ## Key Implementation Details
 
+- **Database:** SQLite with sqlite-vec extension for vector search
 - **Embedding model:** Configurable (default: `paraphrase-MiniLM-L6-v2`, 384 dimensions)
-- **Device:** Auto-detected (CUDA → MPS → CPU) in encoder.py
+- **Device:** Auto-detected (CUDA -> MPS -> CPU) in encoder.py
 - **Resource URIs:** `obsidian://<VAULT_NAME>/<NOTE_PATH>`
-- **DuckDB limitation:** Array updates not supported, so embeddings are deleted and re-inserted
-- **Content hashing:** Files are hashed (SHA-256) and only reindexed when content changes, reducing unnecessary embedding computations
+- **Content hashing:** Files are hashed (SHA-256) and only reindexed when content changes
 
 ## Supported Embedding Models
 
@@ -95,6 +116,7 @@ Options:
   --reindex              Reindex all notes
   --watch                Watch for changes
   -m, --model MODEL      Embedding model to use (overrides OBSIDIAN_INDEX_MODEL env var)
+  -r, --role ROLE        Instance role: auto, primary, or reader (default: auto)
 ```
 
 ## Docker

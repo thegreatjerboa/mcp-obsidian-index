@@ -9,6 +9,7 @@ from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 
 from obsidian_index.background_worker import BaseController
+from obsidian_index.index.coordinator import Role
 from obsidian_index.index.messages import SearchRequestMessage
 from obsidian_index.index.models import EmbeddingModelConfig
 from obsidian_index.index.worker import Worker
@@ -25,6 +26,7 @@ def run_server(
     watch_directories: bool = False,
     ingest_batch_size: int = 32,
     model_config: EmbeddingModelConfig | None = None,
+    role: Role = Role.AUTO,
 ):
     # encoder = Encoder()
     server = Server("obsidian-index")
@@ -35,6 +37,7 @@ def run_server(
         watch_directories=watch_directories,
         ingest_batch_size=ingest_batch_size,
         model_config=model_config,
+        role=role,
     )
     worker_controller = BaseController(worker)
 

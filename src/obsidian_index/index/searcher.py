@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from pathlib import Path
 
-from obsidian_index.index.database import Database
+from obsidian_index.index.database_sqlite import Database
 from obsidian_index.index.encoder import Encoder
 from obsidian_index.logger import logging
 

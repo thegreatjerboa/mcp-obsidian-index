@@ -161,9 +161,10 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Local databases
+# Local databases (SQLite WAL mode)
 *.db
-*.db.wal
+*.db-wal
+*.db-shm
 
 # Test data (created by running tests locally)
 test-data/

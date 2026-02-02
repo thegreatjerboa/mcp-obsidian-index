@@ -3,6 +3,7 @@ from pathlib import Path
 
 import click
 
+from obsidian_index.index.coordinator import Role
 from obsidian_index.index.models import SUPPORTED_MODELS, get_model_config
 
 
@@ -42,12 +43,21 @@ def main():
     type=click.Choice(list(SUPPORTED_MODELS.keys())),
     default=None,
 )
+@click.option(
+    "--role",
+    "-r",
+    "role",
+    help="Instance role for multi-instance coordination. auto: coordinate via database, primary: always index, reader: never index",
+    type=click.Choice(["auto", "primary", "reader"]),
+    default="auto",
+)
 def mcp_cmd(
     database_path: Path,
     vault_paths: Sequence[Path],
     reindex: bool,
     watch: bool,
     model_name: str | None,
+    role: str,
 ):
     """
     Run the Obsidian Index MCP server.
@@ -56,6 +66,9 @@ def mcp_cmd(
 
     model_config = get_model_config(model_name)
 
+    # Convert role string to Role enum
+    role_enum = Role(role)
+
     run_server(
         {vault_path.name: vault_path for vault_path in vault_paths},
         database_path,
@@ -63,6 +76,7 @@ def mcp_cmd(
         watch_directories=watch,
         ingest_batch_size=8,
         model_config=model_config,
+        role=role_enum,
     )
 
 

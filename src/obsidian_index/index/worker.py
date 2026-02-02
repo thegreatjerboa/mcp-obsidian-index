@@ -17,7 +17,8 @@ else:
     from watchdog.observers import Observer
 
 from obsidian_index.background_worker import BaseWorker
-from obsidian_index.index.database import Database
+from obsidian_index.index.coordinator import Coordinator, Role
+from obsidian_index.index.database_sqlite import Database
 from obsidian_index.index.encoder import Encoder
 from obsidian_index.index.indexer import Indexer
 from obsidian_index.index.messages import (
@@ -39,8 +40,10 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
     enqueue_all: bool
     watch_directories: bool
     model_config: EmbeddingModelConfig
+    role: Role
 
     database: Database
+    coordinator: Coordinator
     indexer: Indexer
     searcher: Searcher
     ingest_queue: Queue
@@ -54,6 +57,7 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
         enqueue_all: bool = False,
         watch_directories: bool = False,
         model_config: EmbeddingModelConfig | None = None,
+        role: Role = Role.AUTO,
     ):
         super().__init__()
         self.database_path = database_path
@@ -62,6 +66,7 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
         self.enqueue_all = enqueue_all
         self.watch_directories = watch_directories
         self.model_config = model_config if model_config else get_model_config()
+        self.role = role
 
     def initialize(self):
         logger.info(
@@ -72,17 +77,22 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
         )
 
         self.database = Database(self.database_path, model_config=self.model_config)
+        self.coordinator = Coordinator(self.database, self.role)
+        self.coordinator.start()
+
         encoder = Encoder(model_config=self.model_config)
         self.indexer = Indexer(self.database, self.vaults, encoder)
         self.searcher = Searcher(self.database, self.vaults, encoder)
         self.ingest_queue = Queue()
 
-        # Clean up stale entries before reindexing
-        for vault_name, vault_path in self.vaults.items():
-            self.cleanup_stale_entries(vault_name, vault_path)
+        # Only PRIMARY instances should perform cleanup and indexing on startup
+        if self.coordinator.should_index():
+            # Clean up stale entries before reindexing
+            for vault_name, vault_path in self.vaults.items():
+                self.cleanup_stale_entries(vault_name, vault_path)
 
-        if self.enqueue_all:
-            self.enqueue_all_vaults()
+            if self.enqueue_all:
+                self.enqueue_all_vaults()
 
         if self.watch_directories:
             self.directory_watchers = [
@@ -102,6 +112,9 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
 
     def remove_path_from_index(self, vault_name: str, path: Path):
         """Remove a path from the index."""
+        if not self.coordinator.should_index():
+            logger.debug("Skipping remove (not primary)")
+            return
         self.database.delete_note(vault_name, path)
 
     def cleanup_stale_entries(self, vault_name: str, vault_path: Path):
@@ -121,7 +134,16 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
             )
 
     def enqueue_path_for_ingestion(self, vault_name: str, path: Path):
-        # FIXME: Create a proper API for this
+        """Enqueue a path for indexing.
+
+        For READER instances in AUTO mode, this checks if the PRIMARY is stale
+        and attempts to claim the role if so.
+        """
+        # Check if we should handle this indexing operation
+        if not self.coordinator.check_and_maybe_claim_primary():
+            logger.debug("Skipping indexing (not primary)")
+            return
+
         with self._control.work_available:
             self.ingest_queue.put(IndexMessage(vault_name, path))
             self._control.work_available.notify_all()
@@ -134,6 +156,16 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
         return not self.ingest_queue.empty()
 
     def default_work(self):
+        # Double-check we should still be indexing
+        if not self.coordinator.should_index():
+            # Drain the queue without processing
+            try:
+                while True:
+                    self.ingest_queue.get_nowait()
+            except QueueEmpty:
+                pass
+            return
+
         batch: list[tuple[str, Path]] = []
         for _ in range(self.ingest_batch_size):
             try:
@@ -142,6 +174,23 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
                 break
             batch.append((message.vault_name, message.path))
         self.indexer.ingest_paths(batch)
+
+    def _cleanup(self) -> None:
+        """Cleanup before exit."""
+        # Stop the coordinator
+        if hasattr(self, "coordinator"):
+            self.coordinator.stop()
+
+        # Stop directory watchers
+        if hasattr(self, "directory_watchers"):
+            for watcher in self.directory_watchers:
+                watcher.stop()
+
+        # Close database connection
+        if hasattr(self, "database"):
+            self.database.close()
+
+        super()._cleanup()
 
 
 class DirectoryWatcher:
