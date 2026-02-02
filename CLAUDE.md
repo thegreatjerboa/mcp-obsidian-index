@@ -47,6 +47,26 @@ Worker Process (index/worker.py)
 ## Key Implementation Details
 
 - **Embedding model:** `sentence-transformers/paraphrase-MiniLM-L6-v2` (384 dimensions)
-- **Device:** Currently hardcoded to MPS (Apple Silicon) in encoder.py
+- **Device:** Auto-detected (CUDA → MPS → CPU) in encoder.py
 - **Resource URIs:** `obsidian://<VAULT_NAME>/<NOTE_PATH>`
 - **DuckDB limitation:** Array updates not supported, so embeddings are deleted and re-inserted
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OBSIDIAN_INDEX_POLLING` | `false` | Set to `1` or `true` to use PollingObserver instead of inotify. Required for Docker on Windows. |
+
+## Docker
+
+Build and run with Docker:
+
+```bash
+docker build -t obsidian-index:local .
+docker run -i --rm \
+  -v "C:/path/to/vault:/vault:ro" \
+  -v "C:/path/to/data:/data" \
+  obsidian-index:local
+```
+
+The Dockerfile sets `OBSIDIAN_INDEX_POLLING=true` by default for compatibility with Docker volume mounts.
