@@ -76,17 +76,25 @@ def run_server(
 
         resp = await worker_controller.request(SearchRequestMessage(query))
 
-        return [
-            types.EmbeddedResource(
-                type="resource",
-                resource=types.TextResourceContents(
-                    uri=pydantic.networks.FileUrl("file://" + str(path)),
-                    mimeType="text/markdown",
-                    text=path.read_text(),
-                ),
-            )
-            for path in resp.paths
-        ]
+        results = []
+        for path in resp.paths:
+            try:
+                if not path.exists():
+                    logger.warning("Stale index entry, skipping: %s", path)
+                    continue
+                results.append(
+                    types.EmbeddedResource(
+                        type="resource",
+                        resource=types.TextResourceContents(
+                            uri=pydantic.networks.FileUrl("file://" + str(path)),
+                            mimeType="text/markdown",
+                            text=path.read_text(),
+                        ),
+                    )
+                )
+            except Exception as e:
+                logger.warning("Failed to read file %s: %s", path, e)
+        return results
 
     @server.list_resources()
     async def handle_list_resources() -> list[types.Resource]:

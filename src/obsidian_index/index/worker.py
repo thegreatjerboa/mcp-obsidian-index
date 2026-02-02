@@ -1,3 +1,4 @@
+import os
 from multiprocessing import Queue
 from pathlib import Path
 from queue import Empty as QueueEmpty
@@ -9,7 +10,11 @@ from watchdog.events import (
     FileMovedEvent,
     FileSystemEventHandler,
 )
-from watchdog.observers import Observer
+
+if os.environ.get("OBSIDIAN_INDEX_POLLING", "").lower() in ("1", "true"):
+    from watchdog.observers.polling import PollingObserver as Observer
+else:
+    from watchdog.observers import Observer
 
 from obsidian_index.background_worker import BaseWorker
 from obsidian_index.index.database import Database
@@ -57,6 +62,10 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
         self.searcher = Searcher(self.database, self.vaults, encoder)
         self.ingest_queue = Queue()
 
+        # Clean up stale entries before reindexing
+        for vault_name, vault_path in self.vaults.items():
+            self.cleanup_stale_entries(vault_name, vault_path)
+
         if self.enqueue_all:
             self.enqueue_all_vaults()
 
@@ -75,6 +84,22 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
     def enqueue_vault(self, vault_name: str, vault_path: Path):
         for path in vault_path.rglob("*.md"):
             self.ingest_queue.put(IndexMessage(vault_name, path))
+
+    def remove_path_from_index(self, vault_name: str, path: Path):
+        """Remove a path from the index."""
+        self.database.delete_note(vault_name, path)
+
+    def cleanup_stale_entries(self, vault_name: str, vault_path: Path):
+        """Remove index entries for files that no longer exist."""
+        indexed_paths = self.database.get_all_paths(vault_name)
+        removed_count = 0
+        for rel_path in indexed_paths:
+            full_path = vault_path / rel_path
+            if not full_path.exists():
+                self.database.delete_note(vault_name, Path(rel_path))
+                removed_count += 1
+        if removed_count > 0:
+            logger.info("Cleaned up %d stale index entries for vault %s", removed_count, vault_name)
 
     def enqueue_path_for_ingestion(self, vault_name: str, path: Path):
         # FIXME: Create a proper API for this
@@ -174,15 +199,28 @@ class _FSEventHandler(FileSystemEventHandler):
         if not event.is_directory:
             assert isinstance(event.src_path, str)
             path = Path(event.src_path)
-            if path.is_file() and path.suffix == ".md":
-                logger.warning("Deleted file: %s", path)
+            if path.suffix == ".md":  # Don't check path.is_file() - file doesn't exist anymore
+                logger.info("Deleted file, removing from index: %s", path)
+                try:
+                    rel_path = path.relative_to(self.directory)
+                    self.worker.remove_path_from_index(self.vault_name, rel_path)
+                except Exception as e:
+                    logger.warning("Failed to remove from index: %s", e)
 
     def on_moved(self, event):
         if not event.is_directory:
             assert isinstance(event.src_path, str)
-            path = Path(event.src_path)
-            if path.is_file() and path.suffix == ".md":
-                logger.warning("Moved file: %s", path)
+            old_path = Path(event.src_path)
+            new_path = Path(event.dest_path) if hasattr(event, "dest_path") else None
+            if old_path.suffix == ".md":
+                logger.info("Moved file: %s -> %s", old_path, new_path)
+                try:
+                    rel_old = old_path.relative_to(self.directory)
+                    self.worker.remove_path_from_index(self.vault_name, rel_old)
+                    if new_path and new_path.suffix == ".md" and new_path.exists():
+                        self.worker.enqueue_path_for_ingestion(self.vault_name, new_path.resolve())
+                except Exception as e:
+                    logger.warning("Failed to handle move: %s", e)
 
 
 if __name__ == "__main__":

@@ -50,6 +50,19 @@ class Database:
             "SELECT max(last_modified) FROM notes WHERE vault_name = ?", (vault_name,)
         ).fetchone()[0]  # type: ignore
 
+    def delete_note(self, vault_name: str, path: Path):
+        """Remove a note from the database."""
+        self.ddb_connection.execute(
+            "DELETE FROM notes WHERE vault_name = ? AND path = ?", (vault_name, str(path))
+        )
+
+    def get_all_paths(self, vault_name: str) -> list[str]:
+        """Get all indexed paths for a vault."""
+        result = self.ddb_connection.execute(
+            "SELECT path FROM notes WHERE vault_name = ?", (vault_name,)
+        ).fetchall()
+        return [row[0] for row in result]
+
     def store_note(
         self, path: Path, vault_name: str, last_modified: float, emb_minilm_l6_v2: list[float]
     ):

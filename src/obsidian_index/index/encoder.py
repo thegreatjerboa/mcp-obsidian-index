@@ -5,13 +5,23 @@ import torch
 from sentence_transformers import SentenceTransformer
 
 
+def _get_device() -> str:
+    """Auto-detect the best available device for inference."""
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 class Encoder:
     model_minilm_l6_v2: SentenceTransformer
 
     def __init__(self):
+        device = _get_device()
         self.model_minilm_l6_v2 = SentenceTransformer(
             "sentence-transformers/paraphrase-MiniLM-L6-v2",
-            device="mps",
+            device=device,
         )
 
     def encode_query(self, query: str) -> torch.Tensor | np.ndarray:
