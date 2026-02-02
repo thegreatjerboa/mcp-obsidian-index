@@ -10,6 +10,7 @@ from mcp.server.models import InitializationOptions
 
 from obsidian_index.background_worker import BaseController
 from obsidian_index.index.messages import SearchRequestMessage
+from obsidian_index.index.models import EmbeddingModelConfig
 from obsidian_index.index.worker import Worker
 from obsidian_index.logger import logging
 from obsidian_index.recent_notes import find_recent_notes
@@ -23,6 +24,7 @@ def run_server(
     enqueue_all: bool = False,
     watch_directories: bool = False,
     ingest_batch_size: int = 32,
+    model_config: EmbeddingModelConfig | None = None,
 ):
     # encoder = Encoder()
     server = Server("obsidian-index")
@@ -32,6 +34,7 @@ def run_server(
         enqueue_all=enqueue_all,
         watch_directories=watch_directories,
         ingest_batch_size=ingest_batch_size,
+        model_config=model_config,
     )
     worker_controller = BaseController(worker)
 

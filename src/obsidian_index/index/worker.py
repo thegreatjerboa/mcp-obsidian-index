@@ -20,7 +20,12 @@ from obsidian_index.background_worker import BaseWorker
 from obsidian_index.index.database import Database
 from obsidian_index.index.encoder import Encoder
 from obsidian_index.index.indexer import Indexer
-from obsidian_index.index.messages import IndexMessage, SearchRequestMessage, SearchResponseMessage
+from obsidian_index.index.messages import (
+    IndexMessage,
+    SearchRequestMessage,
+    SearchResponseMessage,
+)
+from obsidian_index.index.models import EmbeddingModelConfig, get_model_config
 from obsidian_index.index.searcher import Searcher
 from obsidian_index.logger import logging
 
@@ -33,6 +38,7 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
     ingest_batch_size: int
     enqueue_all: bool
     watch_directories: bool
+    model_config: EmbeddingModelConfig
 
     database: Database
     indexer: Indexer
@@ -47,6 +53,7 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
         ingest_batch_size: int = 8,
         enqueue_all: bool = False,
         watch_directories: bool = False,
+        model_config: EmbeddingModelConfig | None = None,
     ):
         super().__init__()
         self.database_path = database_path
@@ -54,10 +61,18 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
         self.ingest_batch_size = ingest_batch_size
         self.enqueue_all = enqueue_all
         self.watch_directories = watch_directories
+        self.model_config = model_config if model_config else get_model_config()
 
     def initialize(self):
-        self.database = Database(self.database_path)
-        encoder = Encoder()
+        logger.info(
+            "Initializing worker with model: %s (%s, %d dimensions)",
+            self.model_config.name,
+            self.model_config.model_id,
+            self.model_config.dimensions,
+        )
+
+        self.database = Database(self.database_path, model_config=self.model_config)
+        encoder = Encoder(model_config=self.model_config)
         self.indexer = Indexer(self.database, self.vaults, encoder)
         self.searcher = Searcher(self.database, self.vaults, encoder)
         self.ingest_queue = Queue()
@@ -99,7 +114,11 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
                 self.database.delete_note(vault_name, Path(rel_path))
                 removed_count += 1
         if removed_count > 0:
-            logger.info("Cleaned up %d stale index entries for vault %s", removed_count, vault_name)
+            logger.info(
+                "Cleaned up %d stale index entries for vault %s",
+                removed_count,
+                vault_name,
+            )
 
     def enqueue_path_for_ingestion(self, vault_name: str, path: Path):
         # FIXME: Create a proper API for this

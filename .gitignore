@@ -165,5 +165,8 @@ cython_debug/
 *.db
 *.db.wal
 
+# Test data (created by running tests locally)
+test-data/
+
 # Local config files
 *.local.json

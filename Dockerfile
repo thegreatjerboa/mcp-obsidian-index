@@ -28,6 +28,9 @@ ENV TRANSFORMERS_CACHE=/data/huggingface
 # Use polling observer for Docker volume mounts (inotify doesn't work on Windows host)
 ENV OBSIDIAN_INDEX_POLLING=true
 
+# Default embedding model
+ENV OBSIDIAN_INDEX_MODEL=paraphrase-MiniLM-L6-v2
+
 # The vault will be mounted at /vault
 # Database persisted at /data/index.db
 
