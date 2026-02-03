@@ -149,8 +149,8 @@ class Worker(BaseWorker[SearchRequestMessage, SearchResponseMessage]):
             self._control.work_available.notify_all()
 
     def process_message(self, message: SearchRequestMessage) -> SearchResponseMessage:
-        paths = self.searcher.search(message.query)
-        return SearchResponseMessage(paths=paths)
+        results = self.searcher.search(message.query, top_k=message.limit)
+        return SearchResponseMessage(results=results)
 
     def default_work_available(self) -> bool:
         return not self.ingest_queue.empty()

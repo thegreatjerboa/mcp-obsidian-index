@@ -14,6 +14,35 @@ The server exposes recently modified notes in your vaults as resources to MCP cl
 
 The server implements one tool:
 - `search-notes`: Performs semantic search over indexed notes
+  - `query` (required): Search query string
+  - `limit` (optional): Max results to return (default: 8)
+
+#### Example Search Result
+
+Each search result returns a compact excerpt with metadata instead of full file content:
+
+```
+[Resource from obsidian-index at obsidian://MyVault/Projects/Website Redesign.md]
+
+---
+status: in-progress
+tags: [project, frontend, q1-2024]
+---
+
+Outline: # Website Redesign > ## Goals > ## Timeline > ## Tech Stack > ## Notes
+
+# Website Redesign
+
+Planning doc for the company website refresh. Focus on mobile-first
+design and improved accessibility. Key stakeholders: Design, Marketing,
+Engineering.
+
+## Goals
+
+- Improve mobile experience
+- WCAG 2.1 AA compliance
+- Reduce page load time to under 2s...
+```
 
 ## Run the server
 

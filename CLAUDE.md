@@ -8,6 +8,26 @@ MCP server providing semantic search over Obsidian vault(s). Exposes notes as re
 
 ## Development Commands
 
+**Use Docker for all development commands** (uv/python/npx are not directly available):
+
+```bash
+# Build dev image
+docker build -t obsidian-index:local .
+
+# Lint (use ruff container)
+docker run --rm -v "$(pwd):/app" -w /app ghcr.io/astral-sh/ruff:latest check .
+
+# Format
+docker run --rm -v "$(pwd):/app" -w /app ghcr.io/astral-sh/ruff:latest format .
+
+# Run server
+docker run -i --rm \
+  -v "C:/path/to/vault:/vault:ro" \
+  -v "C:/path/to/data:/data" \
+  obsidian-index:local
+```
+
+**If uv is available locally:**
 ```bash
 uv sync                    # Install/sync dependencies
 uv run ruff check .        # Lint

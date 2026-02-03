@@ -17,6 +17,17 @@ Manual integration tests for validating the MCP server functionality.
 |------|----------------|-----------------|
 | Basic search | `search-notes` with query "test" | Returns relevant notes ranked by semantic similarity |
 | Specific search | `search-notes` with detailed query | Returns notes matching semantic meaning, not just keywords |
+| Limit parameter | `search-notes` with `limit: 3` | Returns exactly 3 results |
+| Result format | Any search query | Each result contains: resource URI, frontmatter (if present), outline, excerpt |
+| Full content fetch | Use `read_resource` with URI from search result | Returns full note content |
+
+**Search Result Format:**
+
+Each search result is a `TextContent` object containing:
+- Resource URI: `obsidian://{vault_name}/{relative_path}` for fetching full content
+- Frontmatter: Raw YAML if present (without `---` delimiters in the excerpt)
+- Outline: Headings joined with ` > ` (max 10 headings shown)
+- Excerpt: First 500 characters of content (after frontmatter)
 
 ### 2. Index Updates
 
