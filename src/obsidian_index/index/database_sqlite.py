@@ -346,14 +346,18 @@ class Database:
 
     def search(
         self, query_emb: torch.Tensor | np.ndarray, top_k: int = 10
-    ) -> Sequence[tuple[str, Path]]:
-        """Search for notes similar to a query embedding."""
+    ) -> Sequence[tuple[str, Path, float]]:
+        """Search for notes similar to a query embedding.
+
+        Returns a sequence of (vault_name, path, distance) tuples.
+        Lower distance means more similar.
+        """
         query_bytes = _serialize_embedding(query_emb)
 
         # sqlite-vec requires k=? constraint for KNN queries
         results = self.connection.execute(
             """
-            SELECT n.vault_name, n.path
+            SELECT n.vault_name, n.path, v.distance
             FROM notes_vec v
             JOIN notes n ON v.note_id = n.id
             WHERE v.embedding MATCH ? AND k = ?
@@ -362,7 +366,7 @@ class Database:
             (query_bytes, top_k),
         ).fetchall()
 
-        return [(r[0], Path(r[1])) for r in results]
+        return [(r[0], Path(r[1]), r[2]) for r in results]
 
     # Primary lock methods for multi-instance coordination
 

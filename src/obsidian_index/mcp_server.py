@@ -50,11 +50,16 @@ def run_server(
         return [
             types.Tool(
                 name="search-notes",
-                description="Search for relevant notes",
+                description="Search for relevant notes. Returns excerpts with frontmatter and outline. Use read_resource to fetch full content.",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string"},
+                        "query": {"type": "string", "description": "Search query"},
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results to return (default: 8)",
+                            "default": 8,
+                        },
                     },
                     "required": ["query"],
                 },
@@ -80,26 +85,36 @@ def run_server(
         if not query:
             raise ValueError("Missing query")
 
-        resp = await worker_controller.request(SearchRequestMessage(query))
+        limit = arguments.get("limit", 8)
+        resp = await worker_controller.request(SearchRequestMessage(query, limit=limit))
 
         results = []
-        for path in resp.paths:
+        for result in resp.results:
+            # Build resource URI for full content
+            vault_path = vaults[result.vault_name]
             try:
-                if not path.exists():
-                    logger.warning("Stale index entry, skipping: %s", path)
-                    continue
-                results.append(
-                    types.EmbeddedResource(
-                        type="resource",
-                        resource=types.TextResourceContents(
-                            uri=pydantic.networks.FileUrl("file://" + str(path)),
-                            mimeType="text/markdown",
-                            text=path.read_text(),
-                        ),
-                    )
-                )
-            except Exception as e:
-                logger.warning("Failed to read file %s: %s", path, e)
+                rel_path = result.path.relative_to(vault_path)
+            except ValueError:
+                rel_path = result.path
+            resource_uri = f"obsidian://{result.vault_name}/{rel_path}"
+
+            # Format result
+            parts = [f"[Resource from obsidian-index at {resource_uri}]"]
+
+            if result.frontmatter:
+                parts.append(f"---\n{result.frontmatter}\n---")
+
+            if result.outline:
+                # Limit to first 10 headings
+                outline_str = " > ".join(result.outline[:10])
+                if len(result.outline) > 10:
+                    outline_str += f" (+{len(result.outline) - 10} more)"
+                parts.append(f"Outline: {outline_str}")
+
+            parts.append(result.excerpt)
+
+            results.append(types.TextContent(type="text", text="\n\n".join(parts)))
+
         return results
 
     @server.list_resources()
