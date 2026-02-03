@@ -141,3 +141,7 @@ docker run -i --rm \
 ```
 
 The Dockerfile sets `OBSIDIAN_INDEX_POLLING=true` and `OBSIDIAN_INDEX_MODEL=paraphrase-MiniLM-L6-v2` by default.
+
+## Testing
+
+See [TESTING.md](TESTING.md) for manual integration tests validating MCP tool functionality including search, indexing, and CRUD operations.
